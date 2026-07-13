@@ -1,7 +1,8 @@
-# July 9, 2026 — VTEX Propagation & Delay Analysis Reference
+# July 9, 2026 — VTEX Propagation Analysis Reference
 
-> Generated 2026-07-13 by `scripts/vtex_crossref.py 0709`.
-> Extends JUL9_COMPLETE_REFERENCE.md with VTEX SQS event layer + HANA-VTEX delay classification.
+> Generated 2026-07-13. Extends JUL9_COMPLETE_REFERENCE.md with VTEX SQS event layer.
+> Answers: "What was VTEX telling the customer at the moment they ordered?"
+> All stats use **Jul 9 CLT events only** (00:00-23:59 CLT).
 
 ---
 
@@ -9,27 +10,16 @@
 
 | Source | Path | Records | Notes |
 |--------|------|---------|-------|
-| **VTEX SQS events** | `analysis/vtex_events/jul09/vtex_jul09.jsonl` | 618,634 total (505,634 Jul 9 CLT) | 1 JSONL file |
+| **VTEX SQS events (Jul 9)** | `analysis/vtex_events/jul09/vtex_jul09.jsonl` | 618,634 total (505,634 Jul 9 CLT) | 1 JSONL file |
 | **VTEX-SAP mapping** | `analysis/vtex_sap_mapping.csv` | 74,804 rows | From Redshift `dim_surtidos` |
-| **HANA parquets** | `data_samples/vw_daily_nrt_0709_*/*.parquet` | ~541M rows / 24 batches | 00:41–23:41 CLT |
-| **Orders CSV** | `exports/cencommerce_quiebre/all_orders_0709_FULL.csv` | ~370K lines | From Redshift `io_items` |
-| **Delay analysis output** | `analysis/jul9/preventable_with_vtex_jul9.csv` | 20,963,429 rows | All (item,store) pairs with HANA zeros |
+| **Preventable parquet** | `analysis/jul9/delay_proof_0709_preventable.parquet` | 17,261 rows | All HANA<=0 order lines (from JUL9 analysis) |
+| **Enriched output** | `analysis/jul9/preventable_with_vtex_jul9.csv` | 17,261 rows | Every line enriched with Jul 9 VTEX state |
 
-### VTEX event window
-
-```
-CLT range: 2026-07-09 00:00:15 → 2026-07-09 18:29:59
-Events cut off at ~18:30 CLT (SQS drain window limit)
-```
-
----
-
-## 2. VTEX Event Stats (Jul 9 CLT only)
+### Jul 9 VTEX event stats (CLT day only)
 
 | Metric | Value |
 |--------|-------|
-| Total events (in file) | 618,634 |
-| Events in Jul 9 CLT window | 505,634 |
+| Total events | 505,634 |
 | jumboclj store events | 502,045 |
 | OOS events (`outOfStock=true`) | 111,906 (22.3%) |
 | IN_STOCK events | 390,139 (77.7%) |
@@ -37,112 +27,115 @@ Events cut off at ~18:30 CLT (SQS drain window limit)
 | Distinct (skuId, storeId) combos | 240,454 |
 | Distinct stores | 40 |
 | Mapping coverage | 20,728/20,754 (99.9%) |
+| CLT range | 00:00:15 → 18:29:59 |
 
-**Jul 9 is the organic baseline.** At 502K events, it has 4.5x fewer events than Jul 7 (2.2M) and 3x fewer than Jul 8 (1.5M). No PUBLICADOR batch spike visible. This reveals the natural VTEX event rate without batch interference — roughly 500-680K events/day from organic stock changes.
-
-Only 22.3% of events are OOS signals (vs 46.8% on Jul 7), suggesting PUBLICADOR disproportionately pushes OOS state changes.
-
----
-
-## 3. Part 1 — Preventable Events (HANA <= 0 before order)
-
-**File:** `analysis/jul9/preventable_events_jul9.csv`
-**Rows:** 17,261
-
-| Metric | Value |
-|--------|-------|
-| Preventable events | 17,261 |
-| Distinct orders | 10,464 |
-| Total CLP | 84,100,246 |
-| Gap min/avg/max | 0 / 30 / 62 min |
-
-### Status breakdown
-
-| Status | Meaning | Lines | CLP |
-|--------|---------|-------|-----|
-| 1 | **Picker FOUND it** (false alarm) | 13,819 | 60,159,157 |
-| 5 | **Picker NOT FOUND** (Pop A) | 1,485 | 9,297,004 |
-| 4 | Substituted | 956 | 5,937,336 |
-| 13 | Weight item OOS | 389 | 5,280,278 |
-| 11 | Added item | 389 | 1,661,673 |
-| 12 | Partial weight pick | 222 | 1,760,808 |
-| 14 | Sin stock (sala) | 1 | 3,990 |
+**Jul 9 is the organic baseline.** At 502K events, it has 4.5x fewer than Jul 7 (2.2M) and 3x fewer than Jul 8 (1.5M). No PUBLICADOR batch spike. This is the natural VTEX event rate — roughly 500K events/day from organic stock changes only.
 
 ---
 
-## 4. Part 2 — VTEX Delay Classification
+## 2. Core Analysis: VTEX State at Order Time
+
+### Results
+
+| VTEX state at order time | Lines | % | CLP |
+|---|---|---|---|
+| **IN_STOCK** | **12,586** | **71.3%** | **50,849,282** |
+| NO_PRIOR_EVENT | 4,098 | 23.2% | 27,326,138 |
+| NO_VTEX_EVENT | 899 | 5.1% | 6,934,288 |
+| OOS | 51 | 0.3% | 298,372 |
+| NO_MAPPING | 11 | 0.1% | 65,287 |
+
+**71.3% of the time, VTEX confirmed "this item is available" while HANA already knew stock was at zero.**
+
+This is the lowest IN_STOCK rate across all analyzed days. Without PUBLICADOR pushing batch events, fewer items had a recent VTEX update — 23.2% fall into NO_PRIOR_EVENT (vs 8.6% on Jul 7). The website was likely showing stale IN_STOCK state from a prior day for these 4,098 lines.
+
+### Breakdown by picker status
+
+| Status | Meaning | Total | VTEX IN_STOCK | VTEX OOS | NO_PRIOR | NO_VTEX |
+|--------|---------|-------|---------------|----------|----------|---------|
+| 1 | Picker FOUND it (false alarm) | 14,092 | 10,422 (74.0%) | 30 | 3,056 | 584 |
+| 5 | Picker NOT FOUND (Pop A) | 1,522 | **789** (51.8%) | 4 | 601 | 128 |
+| 4 | Substituted | 1,011 | 639 (63.2%) | 3 | 299 | 70 |
+| 13 | Weight item OOS | 396 | 332 (83.8%) | 1 | 59 | 4 |
+| 11 | Added item | 388 | 220 (56.7%) | 13 | 53 | 102 |
+| 12 | Partial weight pick | 224 | 183 (81.7%) | 0 | 30 | 11 |
+| 14 | Sin stock (sala) | 1 | 1 | 0 | 0 | 0 |
+
+### The preventable core: Pop A with VTEX IN_STOCK
+
+```
+1,523 Pop A lines
+|- VTEX said IN_STOCK at order time:     790 (51.8%)  <- CONFIRMED PREVENTABLE
+|- VTEX had NO_PRIOR_EVENT:              601 (39.5%)  <- likely also IN_STOCK (stale from prior day)
+|- VTEX had NO_VTEX_EVENT:              128 ( 8.4%)  <- no Jul 9 data
+|- VTEX said OOS:                          4 ( 0.3%)  <- customer ordered despite OOS
+```
+
+**790 lines where all three sources agree: HANA knew, VTEX lied, picker confirmed.**
+
+Jul 9's Pop A VTEX-confirmed count (790) is the lowest across all days — not because fewer stockouts occurred, but because without PUBLICADOR, fewer items had a provable Jul 9 VTEX IN_STOCK event. The 601 NO_PRIOR_EVENT lines were almost certainly also showing IN_STOCK (stale state from prior day), bringing the effective total to ~1,391 (91.3%).
+
+---
+
+## 3. Enriched Output File
 
 **File:** `analysis/jul9/preventable_with_vtex_jul9.csv`
-**Rows:** 20,963,429
+**Rows:** 17,261
+**Columns:** Same as Jul 6 — see VTEX_ANALYSIS_JUL6.md Section 6 for full column reference.
 
-### Case Breakdown — Jul 9
-
-| Case | Count | % | Interpretation |
-|------|-------|---|----------------|
-| **C_SILENT_OOS** | 20,878,410 | 99.6% | Perpetual zero-stock: 20,854,235 have >=20 zero batches. Noise. |
-| **A_SLOW_DETECTION** | 84,228 | 0.4% | VTEX eventually detected OOS but after multiple HANA cycles |
-| **D_FULL_CYCLE** | 462 | 0.002% | Complete zero→restock cycle tracked by both systems |
-| **B_RESTOCK_LAG** | 329 | 0.002% | HANA restocked but VTEX lagged behind |
-| **A_DETECTED** | 0 | 0% | No items had <2 zero batches with VTEX detection |
-
-### Delay Statistics
-
-| Case | Metric | Value |
-|------|--------|-------|
-| **A_SLOW_DETECTION** | avg delay (first_zero→VTEX OOS) | 348 min |
-| | median delay | 355 min |
-| | p95 delay | 385 min |
-| | avg missed HANA cycles | 5.3 |
-| | avg zero batches | 23.8 |
-| **D_FULL_CYCLE** | avg restock lag | 64 min |
-| | median restock lag | 68 min |
-| | avg detection delay | 184 min |
-| **C_SILENT_OOS** | avg zero batches | 24.0 |
-| | full day (>=20 batches) | 20,854,235 (99.9%) |
-| | with any HANA restock | 12,208 |
-
-### The Jul 9 anomaly
-
-Jul 9's dramatically lower VTEX event volume (502K vs 2.2M on Jul 7) cascades through the delay analysis:
-
-| Impact | Jul 7 | Jul 9 | Ratio |
-|--------|-------|-------|-------|
-| VTEX events | 2,244,877 | 502,045 | 4.5x fewer |
-| A_SLOW_DETECTION | 271,981 | 84,228 | 3.2x fewer |
-| D_FULL_CYCLE | 2,232 | 462 | 4.8x fewer |
-| B_RESTOCK_LAG | 1,113 | 329 | 3.4x fewer |
-| C_SILENT_OOS | 20,671,002 | 20,878,410 | ~same |
-
-Without PUBLICADOR pushing batch events, far fewer items ever get a VTEX OOS signal at all — so they fall into C_SILENT_OOS instead. The A_SLOW_DETECTION p95 drops from 814→385 min because the items that DO get detected have a tighter delay distribution.
-
-This strongly suggests that PUBLICADOR is the primary mechanism through which VTEX learns about stock state changes. On days without it, VTEX is largely blind to HANA stock movements.
-
-### HANA Summary
-
-| Metric | Value |
-|--------|-------|
-| Total (item,store) pairs with zeros | 20,963,429 |
-| Pairs that restocked during the day | 12,999 (0.06%) |
+Key columns: `vtex_state_at_order`, `vtex_last_event_utc`, `vtex_last_event_chile`, `vtex_events_count_jul9`, `vtex_all_events_jul9`
 
 ---
 
-## 5. Output Files
+## 4. Cross-Day Comparison
 
-| File | Rows | Description |
-|------|------|-------------|
-| `analysis/jul9/preventable_with_vtex_jul9.csv` | 20,963,429 | Part 2: All (item,store) pairs with delay classification |
-| `analysis/jul9/preventable_events_jul9.csv` | 17,261 | Part 1: All HANA<=0 order lines |
-| `analysis/jul9/restock_lag_jul9.csv` | 329 | Part 2 subset: B_RESTOCK_LAG cases |
-| `analysis/jul9/silent_oos_jul9.csv` | 20,878,410 | Part 2 subset: C_SILENT_OOS cases |
-| `analysis/jul9/vtex_crossref_jul9.xlsx` | 6 sheets | Summary + active cases + case breakdown |
-| `analysis/jul9/delay_proof_0709_preventable.parquet` | 17,261 | Checkpoint: all HANA<=0 order lines (Parquet) |
+| VTEX state at order | Jul 6 | Jul 7 | Jul 8 | Jul 9 |
+|---|---|---|---|---|
+| **IN_STOCK** | 14,875 (77.3%) | 16,149 (88.7%) | 13,823 (86.8%) | **12,586 (71.3%)** |
+| NO_PRIOR_EVENT | 4,025 (20.9%) | 1,563 (8.6%) | 1,662 (10.4%) | **4,098 (23.2%)** |
+| NO_VTEX_EVENT | 261 (1.4%) | 355 (1.9%) | 319 (2.0%) | **899 (5.1%)** |
+| OOS | 77 (0.4%) | 139 (0.8%) | 105 (0.7%) | 51 (0.3%) |
+| **Total** | **19,241** | **17,680** | **15,551** | **17,261** |
+
+| Pop A + VTEX IN_STOCK | Jul 6 | Jul 7 | Jul 8 | Jul 9 |
+|---|---|---|---|---|
+| Lines | 1,769 | 1,687 | 1,157 | **790** |
+| CLP | ~9.4M | 9.2M | 6.7M | **4.5M** |
+
+### The PUBLICADOR effect on provability
+
+| Metric | Jul 7 (PUBLICADOR) | Jul 9 (organic) | Ratio |
+|--------|-------------------|-----------------|-------|
+| VTEX events | 2,244,877 | 502,045 | 4.5x |
+| Pop A IN_STOCK provable | 1,687 (82.3%) | 790 (51.8%) | 2.1x |
+| Pop A NO_PRIOR_EVENT | 295 (14.4%) | 601 (39.5%) | 0.5x |
+
+Without PUBLICADOR, 39.5% of Pop A lines become unprovable from same-day VTEX data alone — the website was showing state set on a prior day. The stockout still happened; we just can't prove what the customer saw from Jul 9 events alone.
 
 ---
 
-## 6. Scripts Reference
+## 5. The Three-Source Verdict
 
-| Script | What it does |
-|--------|-------------|
-| `scripts/vtex_crossref.py 0709` | Parameterized VTEX cross-ref (Part 1 + Part 2) |
-| `scripts/delay_proof_0709.py` | HANA lookup for all orders (original Layer 1) |
-| `scripts/evidence_pack_0709.py` | Pop A/B + confirmation tiers |
+### The failure chain (Pop A, 790 VTEX-confirmed + ~601 likely preventable):
+
+```
+1. HANA batch arrives    -> qty = 0 for this item+store
+2. [NOTHING HAPPENS]     -> no signal sent to VTEX
+3. VTEX still shows      -> "in stock" on jumbo.cl (confirmed for 790, likely for 601 more)
+4. Customer sees         -> "in stock", places order
+5. Picker walks to shelf -> item not there
+6. Picker marks          -> SIN STOCK
+7. Customer gets         -> "your item was not available" message
+```
+
+---
+
+## 6. Limitations
+
+| Limitation | Impact |
+|---|---|
+| **VTEX events are binary** | No actual quantity — only "in stock" or "out of stock". |
+| **Events cut off at ~18:30 CLT** | SQS drain window limit. |
+| **NO_PRIOR_EVENT dominates** | 23.2% of lines (vs 8.6% on Jul 7). Without PUBLICADOR, many items had no Jul 9 VTEX event before the order. |
+| **Lower provability** | Only 51.8% of Pop A lines have a confirmed Jul 9 VTEX IN_STOCK event (vs 82.3% on Jul 7). The other 39.5% were almost certainly also IN_STOCK but can't be proven from Jul 9 data alone. |
+| **Mapping imperfect** | 11 lines with NO_MAPPING. |
