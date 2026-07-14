@@ -33,17 +33,17 @@ HANA stats: 541,089,638 rows loaded, 502,519,697 zero-or-negative (92.9%).
 
 ### Statuses active on Jul 8 (Redshift, J-stores)
 
-| Status | Code | Lines | % | CLP (M) |
-|--------|------|-------|---|---------|
-| **1** | Pickeado | **331,465** | 93.3% | 1,505.92 |
-| **5** | Sin stock (OOS) | **8,688** | 2.4% | 48.29 |
-| **4** | Sustituto | **7,293** | 2.1% | 39.78 |
-| **11** | Agregado | **3,829** | 1.1% | 18.13 |
-| **13** | Compuesto (weight OOS) | **2,608** | 0.7% | 42.04 |
-| **12** | Faltante parcial | **1,329** | 0.4% | 13.25 |
-| **3** | Sin stock (legacy) | **46** | 0.0% | 0.15 |
-| **14** | Sin Stock (sala) | **4** | 0.0% | 0.02 |
-| | **TOTAL** | **355,262** | 100% | **1,667.57** |
+| Status | Code | Lines | % | CLP (M) | Example |
+|--------|------|-------|---|---------|---------|
+| **1** | Pickeado | **331,465** | 93.3% | 1,505.92 | Tena Pants Nocturno G 22 un @ J660 (157,520 CLP) |
+| **5** | Sin stock (OOS) | **8,688** | 2.4% | 48.29 | Pack Whisky JW Black Label @ J624 (117,558 CLP) |
+| **4** | Sustituto | **7,293** | 2.1% | 39.78 | Estufa Gas Ursus Trotter @ J408 (189,990 CLP) |
+| **11** | Agregado | **3,829** | 1.1% | 18.13 | Filete Premium La Hacienda @ J414 (59,410 CLP) |
+| **13** | Compuesto (weight OOS) | **2,608** | 0.7% | 42.04 | Filete Al Vacío kg @ J408 (502,475 CLP) |
+| **12** | Faltante parcial | **1,329** | 0.4% | 13.25 | Café Grano Señor K Santa Rosa @ J989 (183,920 CLP) |
+| **3** | Sin stock (legacy) | **46** | 0.0% | 0.15 | Filetitos Pechuga Congelado 700g @ J955 (11,980 CLP) |
+| **14** | Sin Stock (sala) | **4** | 0.0% | 0.02 | Quitamanchas Clorox Colores @ J411 (10,770 CLP) |
+| | **TOTAL** | **355,262** | 100% | **1,667.57** | |
 
 Jul 8 differences from Jul 6:
 - **Lower volume** — 355,262 lines vs Jul 6's 419,497 (Tuesday vs Saturday effect)
@@ -145,6 +145,11 @@ HANA said this item was out of stock BEFORE the customer ordered. What happened 
 
 Key finding: **12,246 false alarms** -- HANA said stock was 0 but picker found it anyway. These are cases where HANA underreported stock (ERP book < physical shelf).
 
+**False alarm examples (HANA ≤ 0, but picker found it):**
+- Aspiradora Junior Thomas TH-1516 @ J410 — HANA=0, picker found it, 90,993 CLP
+- Lomo Vetado Al Vacío kg @ J403 — HANA=0, picker found it, 70,356 CLP
+- Microondas Thomas TH-25DM @ J410 — HANA=0, picker found it, 69,993 CLP
+
 Note: Pop A is 1,400 from delay_proof (st5 only) vs 1,402 from evidence_pack (st5 + st3 + st14 combined via `status IN (3,5,7,14)`). The extra 2 lines = status 3 (1) + status 14 (1).
 
 ### Step 4b: HANA > 0 branch -> 335,879 order lines
@@ -163,6 +168,15 @@ HANA said this item was IN stock before the customer ordered. What happened at p
 | 14 | Sin Stock (sala) | 3 | 0.02 |
 
 Key finding: **7,187 phantom inventory** at status-5 level. Pop B (via evidence_pack filter `status IN (3,5,7,14)`) captures 7,235 (includes st3=45 + st14=3 + non-st5 matches from join).
+
+**Phantom inventory examples (HANA > 0, but picker OOS):**
+- Pack Whisky JW Black Label 750cc @ J624 — HANA=6, picker OOS, 117,558 CLP
+- Vino Ventisquero Grey Cab Sauv @ J695 — HANA=6, picker OOS, 85,806 CLP
+- Pack Whisky Ballantine's Finest @ J534 — HANA=3, picker OOS, 81,858 CLP
+
+**Extreme phantoms (highest HANA qty, still OOS):**
+- Mantequilla Colun con Sal 250g @ J955 — HANA=**4,140** units, picker OOS, 6,840 CLP
+- Atún Lomitos en Agua 140g @ J519 — HANA=**3,844** units, picker OOS, 2,991 CLP
 
 ### Step 4c: No HANA snapshot -> 3,832 order lines
 
@@ -235,23 +249,35 @@ TOTAL analyzed                              :  8,637  (47.91M CLP)
 
 **Tier 1 (PICKER MISS -- strongest evidence):**
 
-| order_id | store | refid | name | CLP | HANA qty | got_before |
-|----------|-------|-------|------|-----|----------|------------|
-| Example A1 | J414 | 780636-KG | Trucha Filete Fresca Granel | 41,980 | -5.2 | 1 |
-| Example A2 | J408 | 1462094-KG | Filete Al Vacio kg | 39,879 | -12.1 | 3 |
-| Example A3 | J411 | 1996518-KG | Lomo Liso Desgrasado Bandeja 900 g | 35,990 | 0.0 | 2 |
+| order_id | store | refid | sku | name | CLP | HANA qty | got_before |
+|----------|-------|-------|-----|------|-----|----------|------------|
+| v232919248jmch-01 | J775 | 1462094-KG | 11475 | Filete Al Vacío kg | 39,879 | 0.0 | 1 |
+| v232960636jmch-01 | J633 | 1462094-KG | 11475 | Filete Al Vacío kg | 39,879 | 0.0 | 1 |
 
-> Interpretation: HANA said 0 (or negative), picker marked OOS, but 1+ OTHER orders picked the same item at/before this order. The stock was there -- picker missed it.
+> Interpretation: HANA said 0, picker marked OOS, but 1+ OTHER orders picked the same item at/before this order. The stock was there -- picker missed it.
+
+**Tier 2 (RESTOCK LIKELY -- picked only later + HANA rose after):**
+
+| order_id | store | refid | sku | name | CLP | HANA qty | got_after |
+|----------|-------|-------|-----|------|-----|----------|-----------|
+| v232910590jmch-01 | J403 | 1774606 | 69951 | Torta Ignacia: Bizcocho Amapolas | 24,990 | -1.0 | 5 |
+| v232905738jmch-01 | J410 | 2018116 | 144351 | Torta DBT Panqueque Naranja 15 Porciones | 18,990 | 0.0 | 2 |
 
 **Tier 4 (CONFIRMED STOCKOUT -- multiple orders, all failed):**
 
-| order_id | store | refid | name | CLP | HANA qty | orders_tried |
-|----------|-------|-------|------|-----|----------|-------------|
-| Example A4 | J410 | 2002939 | Alimento Perro Amity Premium | 39,941 | 0 | 2 |
-| Example A5 | J403 | 2003780 | Estufa Simil Fuego Nex | 38,994 | 0 | 3 |
-| Example A6 | J403 | 1995001 | Televisor LED 50" | 299,990 | 0 | 2 |
+| order_id | store | refid | sku | name | CLP | HANA qty |
+|----------|-------|-------|-----|------|-----|----------|
+| v232922555jmch-01 | J410 | 2055038 | 159202 | Pack Whisky Buchanan's 12 Años 750cc | 113,358 | 0.0 |
+| v232904276jmch-01 | J408 | 2006063 | 149563 | Sábana Adiestramiento Carbón Activo Pro | 50,358 | 0.0 |
 
 > Interpretation: HANA said 0, multiple orders tried this item all day, ALL failed. Real stockout confirmed by both HANA and picker, across multiple independent attempts.
+
+**Tier 5 (SINGLE ATTEMPT -- not delivered, cause unconfirmed):**
+
+| order_id | store | refid | sku | name | CLP | HANA qty |
+|----------|-------|-------|-----|------|-----|----------|
+| v232921910jmch-01 | J414 | 1844292-KG | 88312 | Filete Premium Camposorno Al Vacío kg | 112,166 | 0.0 |
+| v232899536jmch-01 | J408 | 1895109-KG | 105647 | Asiento Premium Cerro Azul Al Vacío kg | 39,980 | 0.0 |
 
 ---
 
@@ -300,13 +326,35 @@ TOTAL analyzed                              :  8,637  (47.91M CLP)
 
 **Tier 1 (PICKER MISS -- HANA showed stock, picker missed it):**
 
-| order_id | store | refid | name | CLP | HANA qty | got_before |
-|----------|-------|-------|------|-----|----------|------------|
-| Example B1 | J403 | 2029237 | Alimento Perro Doko Adulto | 89,990 | 14 | 2 |
-| Example B2 | J408 | 2006303 | Horno Electrico Ursus Trotter | 84,990 | 3 | 1 |
-| Example B3 | J411 | 1996518-KG | Lomo Liso Desgrasado Bandeja 900 g | 70,713 | 6.5 | 5 |
+| order_id | store | refid | sku | name | CLP | HANA qty | got_before |
+|----------|-------|-------|-----|------|-----|----------|------------|
+| v232960835jmch-01 | J989 | 2008077 | 141048 | Gin Tanqueray Bossa Nova 700cc | 71,964 | 3.0 | 2 |
+| v232964770jmch-01 | J411 | 1707686 | 57264 | Vino Montes Outer Limits Sauv Blanc | 53,865 | 16.0 | 2 |
 
 > Interpretation: HANA said stock > 0, picker marked OOS, but other orders successfully picked the same item. Classic phantom inventory -- the stock exists but the picker couldn't locate it or chose a substitution.
+
+**Tier 3 (PICKED LATER -- only later, HANA flat):**
+
+| order_id | store | refid | sku | name | CLP | HANA qty | got_after |
+|----------|-------|-------|-----|------|-----|----------|-----------|
+| v232907186jmch-01 | J408 | 1686449 | 65191 | Barra Proteína Your Goal Snack Chocolate | 62,400 | 27.0 | 1 |
+| v232908479jmch-01 | J414 | 1998017 | 139015 | Carne Molida Vacuno 4% Grasa 500g | 47,940 | **294.0** | 4 |
+
+> Note: HANA showed 294 units of ground beef, picker OOS'd it, but 4 later orders picked it fine. HANA flat = no restock, stock was there.
+
+**Tier 4 (CONFIRMED STOCKOUT -- multiple orders, all failed):**
+
+| order_id | store | refid | sku | name | CLP | HANA qty |
+|----------|-------|-------|-----|------|-----|----------|
+| v232919908jmch-01 | J502 | 2040236 | 153146 | Set Masa Moldeable Play Doh Starters | 57,528 | 1.0 |
+| v232960451jmch-01 | J532 | 2055038 | 159202 | Pack Whisky Buchanan's 12 Años 750cc | 56,679 | 2.0 |
+
+**Tier 5 (SINGLE ATTEMPT -- not delivered, cause unconfirmed):**
+
+| order_id | store | refid | sku | name | CLP | HANA qty |
+|----------|-------|-------|-----|------|-----|----------|
+| v232913533jmch-01 | J624 | 2048976 | 159178 | Pack Whisky JW Black Label 750cc | 117,558 | 6.0 |
+| v232907715jmch-01 | J695 | 407151 | 11937 | Vino Ventisquero Grey Cab Sauv 750cc | 85,806 | 6.0 |
 
 ---
 
@@ -319,6 +367,10 @@ TOTAL analyzed                              :  8,637  (47.91M CLP)
 | YES at/before | 253 (18.0%) | 2,052 (28.4%) | 2,305 (26.7%) |
 | YES after | 172 (12.3%) | 872 (12.1%) | 1,044 (12.1%) |
 | NO nobody | 977 (69.7%) | 4,311 (59.6%) | 5,288 (61.2%) |
+
+**Cancelled order examples:**
+- Pop A: Pan Ciabatta Granel @ J659 (order v232912522jmch-01, cancelled by sara.riverosmunoz@jumbo.cl)
+- Pop B: Jamón Acaramelado San Jorge Granel @ J659 (same order, same canceller)
 
 ### Multi-day comparison: Jul 1 / Jul 6 / Jul 7 / Jul 8
 
