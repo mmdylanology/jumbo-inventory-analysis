@@ -12,7 +12,7 @@
 | **Jul 7** (Tuesday) | `all_orders_0707_FULL.csv` | 371,553 | 24/24 | 2,400,000 | 1,978 | 8,510 |
 | **Jul 8** (Wednesday) | `all_orders_0708_FULL.csv` | 355,262 | 24/24 | 2,300,000 | 1,402 | 7,235 |
 | **Jul 9** (Thursday) | `all_orders_0709_FULL.csv` | 367,299 | 24/24 | 618,000 | 1,488 | 6,527 |
-| **Jul 10** (Friday) | `all_orders_0710_FULL.csv` | 419,133 | 24/24 | 905,164 | 1,789 | 7,295 |
+| **Jul 10** (Friday) | `all_orders_0710_FULL.csv` | 419,133 | 24/24 | 905,164 | 1,752 | 6,965 |
 | **Jul 11** (Saturday) | `all_orders_0711_FULL.csv` | 412,697 | 24/24 | 545,332 | 1,789 | 7,295 |
 | **Jul 12** (Sunday) | `all_orders_0712_FULL.csv` | 394,647 | 24/24 | 652,783 | 2,253 | 8,665 |
 
@@ -20,13 +20,89 @@
 
 ---
 
-## 2. Order-Level Overview (6-Day Aggregate)
+## 2. Status Codes (6-Day Aggregate)
+
+### Per-status breakdown
+
+| Status | Meaning | Jul 7 | Jul 8 | Jul 9 | Jul 10 | Jul 11 | Jul 12 | **Total** |
+|--------|---------|-------|-------|-------|--------|--------|--------|-----------|
+| 1 | Pickeado | 344,261 | 331,465 | 344,333 | 393,540 | 385,603 | 365,887 | **2,165,089** |
+| 5 | Sin stock (validado) | 10,646 | 8,688 | 8,142 | 8,814 | 9,148 | 11,023 | **56,461** |
+| 4 | Sustituto | 8,418 | 7,293 | 6,806 | 7,586 | 8,048 | 8,904 | **47,055** |
+| 11 | Agregado | 4,043 | 3,829 | 3,940 | 4,520 | 5,253 | 4,585 | **26,170** |
+| 13 | Compuesto (weight OOS) | 2,722 | 2,608 | 2,731 | 3,088 | 3,004 | 2,637 | **16,790** |
+| 12 | Faltante parcial | 1,462 | 1,329 | 1,341 | 1,584 | 1,618 | 1,597 | **8,931** |
+| 3 | Sin stock | 1 | 46 | 0 | 0 | 19 | 7 | **73** |
+| 14 | Sin stock (sala) | 0 | 4 | 1 | 1 | 3 | 2 | **11** |
+| 0 | Sin pickear | 0 | 0 | 5 | 0 | 0 | 5 | **10** |
+| | **TOTAL** | **371,553** | **355,262** | **367,299** | **419,133** | **412,697** | **394,647** | **2,320,591** |
+
+### OOS rate — narrow vs broad
+
+| Definition | Jul 7 | Jul 8 | Jul 9 | Jul 10 | Jul 11 | Jul 12 | **Avg** |
+|-----------|-------|-------|-------|--------|--------|--------|---------|
+| Narrow (st 5 only) | 2.9% | 2.4% | 2.2% | 2.1% | 2.2% | 2.8% | **2.4%** |
+| **Broad (st 3+5+13+14)** | **3.6%** | **3.2%** | **3.0%** | **2.8%** | **2.9%** | **3.5%** | **3.2%** |
+
+Broad OOS = 73,335 lines (3.2%). Narrow OOS understates the problem by ~30% because it excludes
+Compuesto (weight OOS, 16,790 lines) and the small Sin stock/sala counts.
+
+**All OOS statuses:** 3 (Sin stock), 5 (Sin stock validado), 13 (Compuesto/weight OOS), 14 (Sin stock sala).
+Our Pop A/B filter uses `status IN (3,5,7,14)` — excludes 13 because weight items have different dynamics.
+
+---
+
+## 3. Analysis Funnel (How We Get to Pop A/B)
+
+### 6-day aggregate drill-down
+
+```
+2,320,591 total order lines
+│
+├─ HANA ≤ 0 at order time:       105,217  (4.5%)
+│  │
+│  ├─ Pickeado (false alarms):     81,371  (77.3%)  ← HANA said zero, picker found it anyway
+│  ├─ Sin stock (st 3,5,14):       10,662  (10.1%)  → POPULATION A
+│  ├─ Sustituto (st 4):             6,870  ( 6.5%)
+│  ├─ Compuesto (st 13):            2,517  ( 2.4%)
+│  ├─ Agregado (st 11):             2,451  ( 2.3%)
+│  └─ Parcial (st 12):              1,348  ( 1.3%)
+│
+└─ HANA > 0 / no HANA match:   2,215,374  (95.5%)
+   │
+   ├─ Pickeado:                 2,083,718  (94.1%)  ← HANA right, picker found it (expected)
+   ├─ Sin stock (st 3,5,14):      45,197  ( 2.0%)  → POPULATION B
+   ├─ Sustituto (st 4):           40,185  ( 1.8%)
+   ├─ Compuesto (st 13):          14,273  ( 0.6%)
+   ├─ Agregado (st 11):           23,719  ( 1.1%)
+   └─ Parcial (st 12):             7,583  ( 0.3%)
+```
+
+### Per-day HANA ≤ 0 branch
+
+| Day | HANA ≤ 0 | False Alarms | Pop A | % False Alarm |
+|-----|---------|-------------|-------|--------------|
+| Jul 7 | 17,680 | 13,408 | 1,978 | 75.8% |
+| Jul 8 | 15,551 | 12,246 | 1,402 | 78.7% |
+| Jul 9 | 17,261 | 13,819 | 1,488 | 80.1% |
+| Jul 10 | 19,165 | 15,058 | 1,752 | 78.6% |
+| Jul 11 | 17,735 | 13,666 | 1,789 | 77.1% |
+| Jul 12 | 17,825 | 13,174 | 2,253 | 73.9% |
+| **TOTAL** | **105,217** | **81,371** | **10,662** | **77.3%** |
+
+**Key insight:** 77% of the time HANA says zero stock, the picker finds it anyway.
+HANA book stock ≠ physical shelf stock. But the remaining 23% is a real problem — those are Pop A.
+
+---
+
+## 4. Order-Level Overview (6-Day Aggregate)
 
 | Metric | Jul 7 | Jul 8 | Jul 9 | Jul 10 | Jul 11 | Jul 12 | **TOTAL** |
 |--------|-------|-------|-------|--------|--------|--------|-----------|
 | Order lines | 371,553 | 355,262 | 367,299 | 419,133 | 412,697 | 394,647 | **2,320,591** |
 | Distinct orders | 22,349 | 22,106 | 22,546 | 25,683 | 24,934 | 22,146 | **139,764** |
-| OOS rate (st5) | 2.9% | 2.4% | 2.2% | 2.1% | 2.2% | 2.8% | **2.4%** |
+| OOS rate (st5 only) | 2.9% | 2.4% | 2.2% | 2.1% | 2.2% | 2.8% | **2.4%** |
+| OOS rate (3+5+13+14) | 3.6% | 3.2% | 3.0% | 2.8% | 2.9% | 3.5% | **3.2%** |
 | Orders affected | 55.9% | 51.2% | 49.2% | 48.5% | 51.2% | 57.2% | **52.1%** |
 | CLP lost (OOS) | 100.2M | 90.3M | 99.4M | 109.0M | 103.8M | 97.4M | **600.2M** |
 
@@ -35,7 +111,7 @@
 
 ---
 
-## 3. Population A — Propagation Gap (HANA ≤ 0, picker OOS)
+## 5. Population A — Propagation Gap (HANA ≤ 0, picker OOS)
 
 **Definition:** Picker marked OOS AND HANA showed ≤ 0 before the order was placed.
 **Root cause:** HANA already knew stock was zero, but the signal never propagated to VTEX → customer ordered anyway.
@@ -47,32 +123,32 @@
 | Jul 7 | 1,978 | 11.57M | 391 | 145 | 139 | 642 | 661 |
 | Jul 8 | 1,402 | 8.28M | 253 | 92 | 80 | 431 | 546 |
 | Jul 9 | 1,488 | 9.31M | 314 | 86 | 67 | 427 | 594 |
-| Jul 10 | 1,789 | 11.03M | 387 | 81 | 63 | 591 | 667 |
+| Jul 10 | 1,752 | 11.11M | 387 | 118 | 63 | 554 | 630 |
 | Jul 11 | 1,789 | 11.03M | 387 | 81 | 63 | 591 | 667 |
 | Jul 12 | 2,253 | 13.43M | 558 | 58 | 188 | 694 | 755 |
-| **TOTAL** | **10,699** | **64.66M** | **2,290** | **543** | **600** | **3,376** | **3,890** |
+| **TOTAL** | **10,662** | **64.74M** | **2,290** | **580** | **600** | **3,339** | **3,853** |
 
 ### 6-day confirmation tier summary
 
 | Tier | Meaning | Count | % | CLP |
 |------|---------|-------|---|-----|
-| 1 | PICKER MISS | 2,290 | 21.4% | 10,643,863 |
-| 2 | RESTOCK LIKELY | 543 | 5.1% | 2,901,601 |
-| 3 | PICKED LATER | 600 | 5.6% | 3,600,859 |
-| 4 | CONFIRMED STOCKOUT | 3,376 | 31.6% | 20,409,404 |
-| 5 | SINGLE ATTEMPT | 3,890 | 36.4% | 27,105,896 |
+| 1 | PICKER MISS | 2,290 | 21.5% | 10,877,606 |
+| 2 | RESTOCK LIKELY | 580 | 5.4% | 3,007,875 |
+| 3 | PICKED LATER | 600 | 5.6% | 3,545,243 |
+| 4 | CONFIRMED STOCKOUT | 3,339 | 31.3% | 20,525,906 |
+| 5 | SINGLE ATTEMPT | 3,853 | 36.1% | 26,780,970 |
 
 ### 3-bucket summary
 
 | Bucket | Count | CLP |
 |--------|-------|-----|
-| YES — someone got it at/before (Tier 1) | 2,290 | 10,643,863 |
-| YES — someone got it after (Tier 2+3) | 1,143 | 6,502,460 |
-| NO — nobody got it (Tier 4+5) | 7,266 | 47,515,300 |
+| YES — someone got it at/before (Tier 1) | 2,290 | 10,877,606 |
+| YES — someone got it after (Tier 2+3) | 1,180 | 6,553,118 |
+| NO — nobody got it (Tier 4+5) | 7,192 | 47,306,876 |
 
 ---
 
-## 4. Population B — Phantom Inventory (HANA > 0, picker OOS)
+## 6. Population B — Phantom Inventory (HANA > 0, picker OOS)
 
 **Definition:** Picker marked OOS AND HANA showed > 0 before the order was placed.
 **Root cause:** HANA book stock ≠ physical shelf stock. ERP says units exist, but shelf is empty.
@@ -84,39 +160,39 @@
 | Jul 7 | 8,510 | 46.83M | 2602 | 419 | 612 | 2170 | 2707 |
 | Jul 8 | 7,235 | 39.63M | 2052 | 302 | 570 | 1774 | 2537 |
 | Jul 9 | 6,527 | 37.21M | 1827 | 289 | 401 | 1675 | 2335 |
-| Jul 10 | 7,295 | 40.20M | 2532 | 167 | 413 | 1563 | 2620 |
+| Jul 10 | 6,965 | 39.07M | 2289 | 315 | 380 | 1551 | 2430 |
 | Jul 11 | 7,295 | 40.20M | 2532 | 167 | 413 | 1563 | 2620 |
 | Jul 12 | 8,665 | 45.48M | 3090 | 61 | 843 | 1788 | 2883 |
-| **TOTAL** | **45,527** | **249.54M** | **14,635** | **1,405** | **3,252** | **10,533** | **15,702** |
+| **TOTAL** | **45,197** | **248.41M** | **14,392** | **1,553** | **3,219** | **10,521** | **15,512** |
 
 ### 6-day confirmation tier summary
 
 | Tier | Meaning | Count | % | CLP |
 |------|---------|-------|---|-----|
-| 1 | PICKER MISS | 14,635 | 32.1% | 72,854,873 |
-| 2 | RESTOCK LIKELY | 1,405 | 3.1% | 6,951,324 |
-| 3 | PICKED LATER | 3,252 | 7.1% | 16,604,542 |
-| 4 | CONFIRMED STOCKOUT | 10,533 | 23.1% | 56,544,005 |
-| 5 | SINGLE ATTEMPT | 15,702 | 34.5% | 96,587,245 |
+| 1 | PICKER MISS | 14,392 | 31.8% | 71,951,742 |
+| 2 | RESTOCK LIKELY | 1,553 | 3.4% | 7,895,074 |
+| 3 | PICKED LATER | 3,219 | 7.1% | 16,424,058 |
+| 4 | CONFIRMED STOCKOUT | 10,521 | 23.3% | 56,662,257 |
+| 5 | SINGLE ATTEMPT | 15,512 | 34.3% | 95,475,471 |
 
 ---
 
-## 5. Combined Summary (Pop A + Pop B)
+## 7. Combined Summary (Pop A + Pop B)
 
 | | Pop A (HANA ≤ 0) | Pop B (HANA > 0) | **Combined** |
 |---|---|---|---|
-| **Lines** | 10,699 | 45,527 | **56,226** |
-| **CLP** | 64.66M | 249.54M | **314.20M** |
-| YES at/before (T1) | 2,290 (21.4%) | 14,635 (32.1%) | 16,925 |
-| YES after (T2+3) | 1,143 (10.7%) | 4,657 (10.2%) | 5,800 |
-| NO nobody (T4+5) | 7,266 (67.9%) | 26,235 (57.6%) | 33,501 |
+| **Lines** | 10,662 | 45,197 | **55,859** |
+| **CLP** | 64.74M | 248.41M | **313.15M** |
+| YES at/before (T1) | 2,290 (21.5%) | 14,392 (31.8%) | 16,682 |
+| YES after (T2+3) | 1,180 (11.1%) | 4,772 (10.6%) | 5,952 |
+| NO nobody (T4+5) | 7,192 (67.5%) | 26,033 (57.6%) | 33,225 |
 
-**6-day total OOS impact: 314.2M CLP across 56,226 order lines.**
-Projected monthly: ~1571M CLP.
+**6-day total OOS impact: 313.1M CLP across 55,859 order lines.**
+Projected monthly: ~1566M CLP.
 
 ---
 
-## 6. VTEX Website Blindness — Hourly Classification
+## 8. VTEX Website Blindness — Hourly Classification
 
 For each (sku, store) pair ordered on a given day, we built an hourly timeline comparing
 HANA stock level (24 hourly snapshots) vs VTEX OOS state (from SQS events). This reveals
@@ -152,7 +228,7 @@ Pearson r = 0.835 (strong positive). PUBLICADOR batch spikes roughly DOUBLE the 
 
 ---
 
-## 7. Revenue at Risk — Orders on Never-Caught Items
+## 9. Revenue at Risk — Orders on Never-Caught Items
 
 For the ~5,500-6,300 never-caught (sku,store) pairs per day, how many customer orders
 were placed on those exact combos?
@@ -182,7 +258,7 @@ Items on never-caught pairs are **~4.2x more likely** to fail at picking than th
 
 ---
 
-## 8. Store-Level Blindness Ranking
+## 10. Store-Level Blindness Ranking
 
 Top 15 stores by OOS volume (6-day aggregate):
 
@@ -209,7 +285,7 @@ Top 15 stores by OOS volume (6-day aggregate):
 
 ---
 
-## 9. Chronic Repeat Offenders
+## 11. Chronic Repeat Offenders
 
 (sku, store) pairs that were never-caught across multiple days:
 
@@ -241,7 +317,7 @@ Top 15 stores by OOS volume (6-day aggregate):
 
 ---
 
-## 10. Delay Proof Stats
+## 12. Delay Proof Stats
 
 | Day | Preventable Events | Distinct Orders | Gap Min (min) | Gap Mean (min) | Gap Max (min) |
 |-----|-------------------|----------------|--------------|---------------|--------------|
@@ -255,7 +331,7 @@ Top 15 stores by OOS volume (6-day aggregate):
 
 ---
 
-## 11. Methodology
+## 13. Methodology
 
 ### Pipeline (per day)
 
@@ -287,7 +363,7 @@ Always apply 6 VARCHAR overrides: `dateupdate`, `inicio_picking`, `fin_picking`,
 
 ---
 
-## 12. Key Output Files
+## 14. Key Output Files
 
 | Day | Evidence Pack | Pop A CSV | Pop B CSV | Delay Proof | VTEX Classification |
 |-----|-------------|-----------|-----------|-------------|-------------------|
