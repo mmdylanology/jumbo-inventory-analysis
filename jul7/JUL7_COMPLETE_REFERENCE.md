@@ -70,13 +70,7 @@ Jul 7 differences from prior days:
 | Qty ordered (SUM originalquantity) | 674,173 |
 | Qty delivered (SUM pickingquantity) | 640,212 (95.0%) |
 
-### Value (CLP)
 
-| Metric | CLP | % |
-|--------|-----|---|
-| **Total ordered** | **1,729,454,718** | 100% |
-| Lost to OOS (status 5 + 13) | 100,225,048 | 5.8% |
-| Lost to substitution (status 4) | 42,622,053 | 2.5% |
 
 ### Order impact summary
 
