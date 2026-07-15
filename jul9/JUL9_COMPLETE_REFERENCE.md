@@ -63,7 +63,7 @@ Jul 9 differences from prior days:
 | **Total item lines** | **367,299** |
 | **Distinct orders** | **22,546** |
 | Qty ordered (SUM originalquantity) | 654,907 |
-| Qty delivered (SUM pickingquantity) | 626,933 (95.7%) |
+| **FOUND RATE** **CONSIDERING ALL JUMBO STORES ON JUNE09** **95.7%** |
 
 ### Value (CLP)
 
