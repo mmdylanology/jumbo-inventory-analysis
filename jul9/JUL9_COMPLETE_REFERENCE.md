@@ -48,6 +48,9 @@ HANA stats: 541,334,228 rows loaded, 502,801,995 zero-or-negative (92.9%).
 
 Jul 9 differences from prior days:
 - **OOS rate 2.2%** — lowest of all five days measured (Jul 1=2.5%, Jul 6=3.3%, Jul 7=2.9%, Jul 8=2.4%)
+- **OOS Compuesto (weight OOS)  0.7%** — Weighted products OOS
+- **Total Out of Stock on June 09** - **2.9%**
+- **Status 0 has only 5 lines** (effectively all orders processed by export time)
 - **Status 0 has only 5 lines** (effectively all orders processed by export time)
 - **Status 14 has 1 line** (sala deletion — captured by our `status IN (3,5,7,14)` filter)
 - Our filter `status IN (3,5,7,14)` captures: st5 (8,142) + st14 (1) = 8,143 lines at status level
@@ -63,6 +66,7 @@ Jul 9 differences from prior days:
 | **Total item lines** | **367,299** |
 | **Distinct orders** | **22,546** |
 | Qty ordered (SUM originalquantity) | 654,907 |
+| Qty delivered (SUM pickingquantity) | 626,933 (95.7%) |
 | **FOUND RATE** **CONSIDERING ALL JUMBO STORES ON JUNE09** **95.7%** |
 
 ### Value (CLP)
