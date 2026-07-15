@@ -45,10 +45,10 @@ HANA stats: 540,957,044 rows loaded, 502,427,779 zero-or-negative (92.9%).
 | | **TOTAL** | **371,553** | 100% | **1,729.45** |
 
 Jul 7 differences from prior days:
-- **OOS rate 2.9%** — better than Jul 6 (3.3%) but worse than Jul 1 (2.5%)
+- **OOS rate 3.6%** — better than Jul 6 (3.3%) but worse than Jul 1 (2.5%)
 - **Status 14 and 15 absent** (both appeared on Jul 6 with 1 row each)
 - **Status 3 present** with 1 row (as on Jul 6)
-- Our filter `status IN (3,5,7,14)` captures: st5 (10,646) + st3 (1) = 10,647 lines
+
 
 ---
 
